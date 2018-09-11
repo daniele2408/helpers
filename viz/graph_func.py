@@ -34,10 +34,10 @@ def get_predict(df, soglia):
     
     return temp
 
-def compute_scores(df, soglia, verbose=False):
+def compute_scores(df, soglia, nometrue, nomeprob, verbose=False):
     aux = df.copy()
     #df_cm = pd.crosstab(temp.true_bool, get_predict(temp, soglia)['predict'], dropna=False)
-    temp = get_predict(aux, soglia)[['true_bool', 'predict']]
+    temp = get_predict(aux, soglia)[[nometrue, nomeprob]]
     TN = temp[(temp.iloc[:,0]==0)&(temp.iloc[:,1]==0)].count()[0]
     TP = temp[(temp.iloc[:,0]==1)&(temp.iloc[:,1]==1)].count()[0]
     
@@ -77,6 +77,7 @@ def roc_curve_annotated(ytrue, yprob, nometrue, nomeprob, ls_score, rootDir, fil
         None: l'output è un .html generato
 
     '''
+    ls_score_totale = ['accuracy', 'recall', 'precision', 'fpr', 'f1score', 'f2score', 'f05score', 'miss_error_0', 'miss_error_1']
 
     os.chdir(rootDir)
 
@@ -100,7 +101,7 @@ def roc_curve_annotated(ytrue, yprob, nometrue, nomeprob, ls_score, rootDir, fil
     lista_tuple_soglia = list()
     for soglia in tqdm(thr):
         if 0 <= soglia <= 1:
-            lista_tuple_soglia.append((soglia,compute_scores(df_full, soglia)))
+            lista_tuple_soglia.append((soglia,compute_scores(df_full, soglia, nometrue, nomeprob)))
     
     roc = go.Scatter(
         x = fpr,
@@ -122,8 +123,8 @@ def roc_curve_annotated(ytrue, yprob, nometrue, nomeprob, ls_score, rootDir, fil
                 borderpad=4,
             )]
     annotazioni.extend(annotations_roc(
-        ['accuracy', 'recall', 'precision', 'max_min_acc', 'f1score', 'f2score', 'f05score'],
         ls_score,
+        ls_score_totale,
         lista_tuple_soglia,
         fpr,
         tpr,
