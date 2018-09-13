@@ -342,6 +342,6 @@ def grafico_metriche(df, truename, probname, thr, rootDir):
         yaxis={'title':'valori metriche'}
     )
 
-    fig = go.Figure(data=data)
+    fig = go.Figure(data=data, layout=layout)
 
     poff.plot(fig, auto_open=False, filename=os.path.join(rootDir, 'graficometriche.html'))
