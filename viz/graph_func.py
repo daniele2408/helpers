@@ -6,6 +6,47 @@ import plotly.graph_objs as go
 from sklearn.metrics import auc, confusion_matrix, log_loss, roc_auc_score, roc_curve, f1_score, precision_recall_curve
 from tqdm import tqdm
 
+
+
+def get_predict(temp, soglia, nomeprob):
+    temp
+
+    temp['predict'] = temp[nomeprob].apply(lambda x: 1 if x>=soglia else 0)
+    
+    return temp
+
+def conf_matr_doc(df, metriche, ls_score, ls, rootDir, filename, nometrue, nomeprob):
+    with open(os.path.join(rootDir, filename), 'w') as f:
+        for metrica in metriche:
+            #     metrica = 'f05score'
+            if metrica == 'max_mean_acc':
+                f.write('################ max {} ################'.format(metrica))
+
+                findmean = max(ls, key=lambda x: ((1-x[1][ls_score.index('miss_error_0')])+(1-x[1][ls_score.index('miss_error_1')]))/2)
+                soglia, metrica_val = findmean[0], ((1-findmean[1][ls_score.index('miss_error_0')])+(1-findmean[1][ls_score.index('miss_error_0')]))/2
+
+            #         print('Con una soglia di {} abbiamo una accuracy per classe media massima pari a {}'.format(soglia, metrica, metrica_val))
+            #         cm = pd.crosstab(df_full.true_bool, get_predict(df_full, soglia)['predict'], dropna=False)
+            #         pd.concat([cm, pd.Series([cm.iloc[0,1] / cm.iloc[0,:].sum(), cm.iloc[1,0] / cm.iloc[1,:].sum()], name='error_rate')], axis=1)
+            elif metrica == 'max_min_acc':
+                f.write('################ max {} ################'.format(metrica))
+
+                findmean = max(ls, key=lambda x: min((1-x[1][ls_score.index('miss_error_0')]),(1-x[1][ls_score.index('miss_error_1')])))
+                soglia, metrica_val = findmean[0], ((1-findmean[1][ls_score.index('miss_error_0')])+(1-findmean[1][ls_score.index('miss_error_0')]))/2
+
+            else:
+                f.write('\n################ max {} ################'.format(metrica))
+                findmax = max(ls, key=lambda x: x[1][ls_score.index(metrica)])
+                soglia, metrica_val = findmax[0], findmax[1][ls_score.index(metrica)]
+
+            f.write('\nCon una soglia di {:.5f} la max {} è pari a {:.5f}\n'.format(soglia, metrica, metrica_val))
+            cm = pd.DataFrame(confusion_matrix(df[nometrue], get_predict(df, soglia, nomeprob)['predict']))
+            cm.index.rename('true_bool', inplace=True)
+            cm.rename_axis('predict', inplace=True, axis='columns')
+            # print(cm)
+            print(pd.concat([cm, pd.Series([cm.iloc[0,1] / cm.iloc[0,:].sum(), cm.iloc[1,0] / cm.iloc[1,:].sum()], name='error_rate')], axis=1), file=f)
+
+
 def annotations_roc(ls_ls, ls_score, ls_soglie, fpr, tpr, thr):
     ls_ann = list()
     for metrica in ls_ls:
@@ -27,22 +68,16 @@ def annotations_roc(ls_ls, ls_score, ls_soglie, fpr, tpr, thr):
         
     return ls_ann
 
-def get_predict(df, soglia):
-    temp = df.copy()
-
-    temp['predict'] = temp.score.apply(lambda x: 1 if x>=soglia else 0)
-    
-    return temp
 
 def compute_scores(df, soglia, nometrue, nomeprob, verbose=False):
-    aux = df.copy()
+    temp = df.copy()
     #df_cm = pd.crosstab(temp.true_bool, get_predict(temp, soglia)['predict'], dropna=False)
-    temp = get_predict(aux, soglia)[[nometrue, nomeprob]]
-    TN = temp[(temp.iloc[:,0]==0)&(temp.iloc[:,1]==0)].count()[0]
-    TP = temp[(temp.iloc[:,0]==1)&(temp.iloc[:,1]==1)].count()[0]
+    get_predict(temp, soglia, nomeprob)[[nometrue, nomeprob]]
+    TN = temp[(temp[nometrue]==0)&(temp['predict']==0)].count()[0]
+    TP = temp[(temp[nometrue]==1)&(temp['predict']==1)].count()[0]
     
-    FP = temp[(temp.iloc[:,0]==0)&(temp.iloc[:,1]==1)].count()[0]
-    FN = temp[(temp.iloc[:,0]==1)&(temp.iloc[:,1]==0)].count()[0]
+    FP = temp[(temp[nometrue]==0)&(temp['predict']==1)].count()[0]
+    FN = temp[(temp[nometrue]==1)&(temp['predict']==0)].count()[0]
     
     if verbose:
         print('TN: ',TN,'TP: ', TP,'FP: ', FP,'FN: ', FN, sep='\n')
@@ -58,6 +93,7 @@ def compute_scores(df, soglia, nometrue, nomeprob, verbose=False):
     miss_error_1 = FN/(FN+TP)
     scores = [accuracy, recall, precision, fpr, f1score, f2score, f05score, miss_error_0, miss_error_1]
     scores = [e if e!=np.NaN else 0 for e in scores]
+    # print(scores, TP, TN, FP, FN)
     return scores
 
 def roc_curve_annotated(ytrue, yprob, nometrue, nomeprob, ls_score, rootDir, filename):
@@ -155,6 +191,8 @@ def roc_curve_annotated(ytrue, yprob, nometrue, nomeprob, ls_score, rootDir, fil
     fig = go.Figure(data=data, layout=layout)
 
     poff.plot(fig, auto_open=False, filename=os.path.join(rootDir,filename))
+    conf_matr_doc(df_full, ls_score, ls_score_totale, lista_tuple_soglia, rootDir, 'report_roc.txt', nometrue, nomeprob)
+    grafico_metriche(df_full, nometrue, nomeprob, thr, rootDir)
 
 def real_quantili(df, n, nometrue, nomeprob):
     aux = df.copy()
@@ -176,6 +214,8 @@ def lift_chart(df, nometrue, nomeprob, rootDir, filename):
     
     df_lift_sel = real_quantili(df, 10, nometrue, nomeprob)
     
+    realPerTrue = df[nometrue].mean()
+
     x = df_lift_sel.cumulative_data_fraction
 
     trace = go.Scatter(
@@ -247,9 +287,61 @@ def lift_chart(df, nometrue, nomeprob, rootDir, filename):
         "zeroline":False
         },
         showlegend=True,
+        annotations = [
+            {
+                'x':x[-2],
+                'y':realPerTrue*1.1
+                ,'xref':'x','yref':'y',
+                'text':'% totale di target pari a 1',
+                'showarrow':False,
+                'font':{'color':'green'}
+                }
+        ],
+        shapes = [
+        {
+            'type': 'line',
+            'x0': x[0],
+            'y0': realPerTrue,
+            'x1': x[-1],
+            'y1': realPerTrue,
+            'line': {
+                'color': 'green',
+                'width': 1,
+                'dash':'dashdot'
+                    }
+            }
+        ],
         # shapes= genera_rect({'red':0.2,'orange':0.4,'yellow':0.8,'green':1}, df_lift, 'quantili', opc=0.2)
     )
     fig = go.Figure(data=data, layout=layout)
     poff.iplot(fig)
-    # plot(fig, filename=r'C:/Users/LEI00020/gitfolder/antifrodereboot/Sources/prjDeploy/Deployment/Deployment/output/liftchart_new_grid.html')
     poff.plot(fig, auto_open=False, filename=os.path.join(rootDir, filename))
+
+
+def grafico_metriche(df, truename, probname, thr, rootDir):
+    ls_score_tot = ['accuracy', 'recall', 'precision', 'fpr', 'f1score', 'f2score', 'f05score', 'miss_error_0', 'miss_error_1']
+    ls = list()
+    for soglia in thr:
+        res = compute_scores(df, soglia, truename, probname, rootDir)
+        ls.append(res)
+
+    df_metriche = pd.DataFrame(ls, columns=ls_score_tot)
+
+    data = list()
+    for metrica in ls_score_tot:
+        trace = go.Scatter(
+            x = thr,
+            y = df_metriche[metrica],
+            name = metrica
+        )
+        data.append(trace)
+
+    layout = go.Layout(
+        title='Metriche della confusione matrix',
+        xaxis={'title':'valori soglia'},
+        yaxis={'title':'valori metriche'}
+    )
+
+    fig = go.Figure(data=data)
+
+    poff.plot(fig, auto_open=False, filename=os.path.join(rootDir, 'graficometriche.html'))
