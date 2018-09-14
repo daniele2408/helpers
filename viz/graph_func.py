@@ -44,7 +44,7 @@ def conf_matr_doc(df, metriche, ls_score, ls, rootDir, filename, nometrue, nomep
             cm.index.rename('true_bool', inplace=True)
             cm.rename_axis('predict', inplace=True, axis='columns')
             # print(cm)
-            print(pd.concat([cm, pd.Series([cm.iloc[0,1] / cm.iloc[0,:].sum(), cm.iloc[1,0] / cm.iloc[1,:].sum()], name='error_rate')], axis=1), file=f)
+            # print(pd.concat([cm, pd.Series([cm.iloc[0,1] / cm.iloc[0,:].sum(), cm.iloc[1,0] / cm.iloc[1,:].sum()], name='error_rate')], axis=1), file=f)
 
 
 def annotations_roc(ls_ls, ls_score, ls_soglie, fpr, tpr, thr):
@@ -91,12 +91,13 @@ def compute_scores(df, soglia, nometrue, nomeprob, verbose=False):
     f05score = 0 if precision == 0 or recall == 0 else 1.25*(precision*recall/(0.25*precision+recall))
     miss_error_0 = FP/(TN+FP)
     miss_error_1 = FN/(FN+TP)
-    scores = [accuracy, recall, precision, fpr, f1score, f2score, f05score, miss_error_0, miss_error_1]
+    precision_0 = TN /(TN+FN)
+    scores = [accuracy, recall, precision, fpr, f1score, f2score, f05score, miss_error_0, miss_error_1, precision_0]
     scores = [e if e!=np.NaN else 0 for e in scores]
     # print(scores, TP, TN, FP, FN)
     return scores
 
-def roc_curve_annotated(ytrue, yprob, nometrue, nomeprob, ls_score, rootDir, filename):
+def roc_curve_annotated(ytrue, yprob, nometrue, nomeprob, ls_score, rootDir, filename, grafmetr_ls=None):
     '''Funzione che realizza uan roc curve in .html per i risultati di un modello
 
     Arguments:
@@ -113,7 +114,7 @@ def roc_curve_annotated(ytrue, yprob, nometrue, nomeprob, ls_score, rootDir, fil
         None: l'output è un .html generato
 
     '''
-    ls_score_totale = ['accuracy', 'recall', 'precision', 'fpr', 'f1score', 'f2score', 'f05score', 'miss_error_0', 'miss_error_1']
+    ls_score_totale = ['accuracy', 'recall', 'precision', 'fpr', 'f1score', 'f2score', 'f05score', 'miss_error_0', 'miss_error_1', 'precision_0']
 
     os.chdir(rootDir)
 
@@ -192,7 +193,6 @@ def roc_curve_annotated(ytrue, yprob, nometrue, nomeprob, ls_score, rootDir, fil
 
     poff.plot(fig, auto_open=False, filename=os.path.join(rootDir,filename))
     conf_matr_doc(df_full, ls_score, ls_score_totale, lista_tuple_soglia, rootDir, 'report_roc.txt', nometrue, nomeprob)
-    grafico_metriche(df_full, nometrue, nomeprob, thr, rootDir)
 
 def real_quantili(df, n, nometrue, nomeprob):
     aux = df.copy()
@@ -258,7 +258,7 @@ def lift_chart(df, nometrue, nomeprob, rootDir, filename):
         yaxis = 'y2'
     )
 
-    data = [trace, trace2, trace3, trace4]
+    data = [trace, trace2, trace3, trace4, trace6]
     layout = go.Layout(
         title = 'Lift Chart',
         xaxis = {
@@ -318,17 +318,27 @@ def lift_chart(df, nometrue, nomeprob, rootDir, filename):
     poff.plot(fig, auto_open=False, filename=os.path.join(rootDir, filename))
 
 
-def grafico_metriche(df, truename, probname, thr, rootDir):
-    ls_score_tot = ['accuracy', 'recall', 'precision', 'fpr', 'f1score', 'f2score', 'f05score', 'miss_error_0', 'miss_error_1']
+def grafico_metriche(df, truename, probname, rootDir, filename, ls_score=None):
+    _, _, thr = roc_curve(df[truename], df[probname])
+
+    thr = [e for e in thr if 0<=e<=1]
+    thr.insert(0,1)
+    thr.append(0)
+
+    ls_score_tot = ['accuracy', 'recall', 'precision', 'fpr', 'f1score', 'f2score', 'f05score', 'miss_error_0', 'miss_error_1', 'precision_0']
+    if ls_score is None:
+        ls_score = ls_score_tot
+    ls_index = [ls_score_tot.index(m) for m in ls_score]
+    print(ls_index)
     ls = list()
     for soglia in thr:
-        res = compute_scores(df, soglia, truename, probname, rootDir)
-        ls.append(res)
+        res = compute_scores(df, soglia, truename, probname)
+        ls.append([n for i,n in enumerate(res) if i in ls_index])
 
-    df_metriche = pd.DataFrame(ls, columns=ls_score_tot)
+    df_metriche = pd.DataFrame(ls, columns=ls_score)
 
     data = list()
-    for metrica in ls_score_tot:
+    for metrica in ls_score:
         trace = go.Scatter(
             x = thr,
             y = df_metriche[metrica],
@@ -344,4 +354,4 @@ def grafico_metriche(df, truename, probname, thr, rootDir):
 
     fig = go.Figure(data=data, layout=layout)
 
-    poff.plot(fig, auto_open=False, filename=os.path.join(rootDir, 'graficometriche.html'))
+    poff.plot(fig, auto_open=False, filename=os.path.join(rootDir, filename))
