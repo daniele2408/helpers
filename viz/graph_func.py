@@ -97,23 +97,26 @@ def compute_scores(df, soglia, nometrue, nomeprob, verbose=False):
     # print(scores, TP, TN, FP, FN)
     return scores
 
-def roc_curve_annotated(ytrue, yprob, nometrue, nomeprob, ls_score, rootDir, filename, grafmetr_ls=None):
+def roc_curve_annotated(df, nometrue, nomeprob, ls_score, rootDir, filename, grafmetr_ls=None, save=True):
     '''Funzione che realizza uan roc curve in .html per i risultati di un modello
 
     Arguments:
 
-        ytrue, (Series): serie della variabile target
-        yprob, (Series): serie di probabilità predette per il target
+        df, (DataFrame): dataframe con le colonne truth e score
         nometrue, (string): nome colonna true
         nomeprob, (string): nome colonna prob
         ls_score, (list): lista di stringhe contenenti le metriche da annotare
         rootDir, (string): path della cartella dove salvare i grafici
         filename, (string): path del file .html
+        save, (bool): se salvare il file nel path indicato
 
     Returns:
         None: l'output è un .html generato
 
     '''
+
+    ytrue, yprob = df[nometrue], df[nomeprob]
+
     ls_score_totale = ['accuracy', 'recall', 'precision', 'fpr', 'f1score', 'f2score', 'f05score', 'miss_error_0', 'miss_error_1', 'precision_0']
 
     os.chdir(rootDir)
@@ -191,8 +194,11 @@ def roc_curve_annotated(ytrue, yprob, nometrue, nomeprob, ls_score, rootDir, fil
 
     fig = go.Figure(data=data, layout=layout)
 
-    poff.plot(fig, auto_open=False, filename=os.path.join(rootDir,filename))
-    conf_matr_doc(df_full, ls_score, ls_score_totale, lista_tuple_soglia, rootDir, 'report_roc.txt', nometrue, nomeprob)
+    if save:
+        poff.plot(fig, auto_open=False, filename=os.path.join(rootDir,filename))
+        conf_matr_doc(df_full, ls_score, ls_score_totale, lista_tuple_soglia, rootDir, 'report_roc.txt', nometrue, nomeprob)
+
+    return fig
 
 def real_quantili(df, n, nometrue, nomeprob):
     aux = df.copy()
@@ -210,7 +216,7 @@ def real_quantili(df, n, nometrue, nomeprob):
     
     return lift_chart
 
-def lift_chart(df, nometrue, nomeprob, rootDir, filename):
+def lift_chart(df, nometrue, nomeprob, rootDir, filename, save=True):
     
     df_lift_sel = real_quantili(df, 10, nometrue, nomeprob)
     
@@ -315,10 +321,14 @@ def lift_chart(df, nometrue, nomeprob, rootDir, filename):
     )
     fig = go.Figure(data=data, layout=layout)
     poff.iplot(fig)
-    poff.plot(fig, auto_open=False, filename=os.path.join(rootDir, filename))
+
+    if save:
+        poff.plot(fig, auto_open=False, filename=os.path.join(rootDir, filename))
+
+    return fig
 
 
-def grafico_metriche(df, truename, probname, rootDir, filename, ls_score=None):
+def grafico_metriche(df, truename, probname, rootDir, filename, ls_score=None, save=True):
     _, _, thr = roc_curve(df[truename], df[probname])
 
     thr = [e for e in thr if 0<=e<=1]
@@ -329,7 +339,6 @@ def grafico_metriche(df, truename, probname, rootDir, filename, ls_score=None):
     if ls_score is None:
         ls_score = ls_score_tot
     ls_index = [ls_score_tot.index(m) for m in ls_score]
-    print(ls_index)
     ls = list()
     for soglia in thr:
         res = compute_scores(df, soglia, truename, probname)
@@ -354,4 +363,171 @@ def grafico_metriche(df, truename, probname, rootDir, filename, ls_score=None):
 
     fig = go.Figure(data=data, layout=layout)
 
-    poff.plot(fig, auto_open=False, filename=os.path.join(rootDir, filename))
+    if save:
+        poff.plot(fig, auto_open=False, filename=os.path.join(rootDir, filename))
+
+    return fig
+
+def plot_this(base, top, sign, feature, feat_values, model_pred, nrow, gg, mm, idsx, filename=None, iftest=None, raw=None):
+    # feature=['{}={}'.format(k,v) for k,v in zip(feature, feat_values)]
+    feature = feature.tolist()
+    if iftest:
+        pos = [e[0] for e in raw if e[0]>0]
+        neg = [e[0] for e in raw if e[0]<0]
+        neg = sorted(neg, reverse=True)
+        tot = neg + pos
+        negsum = np.cumsum(neg)+0.29
+        mn = min(negsum)
+        possum = np.cumsum([0]+pos)+mn
+        totsum = negsum.tolist() +possum.tolist()
+        # totsum = np.cumsum(tot)
+        # mn = min(totsum)
+        # base = [0.29+t for t in negsum] + [0.29+mn + t for t in possum]
+        base = negsum.tolist() + possum.tolist()
+        top = np.abs(tot)
+        print(np.array(tot))
+        print(totsum)
+        print(np.array(base))
+
+
+    trace_base = go.Bar(
+        x = feature,
+        y = base,
+        hoverinfo='none',
+        # orientation='h',
+        marker=dict(
+        color='rgba(1,1,1, 0.0)',
+    )
+    )
+
+    trace_top = go.Bar(
+        x = feature,
+        y = top,
+        hoverinfo='text',
+        # orientation='h',
+        text=['{}={}'.format(k,v) for k,v in zip(feature, feat_values)],
+        # textposition='top center',
+            marker=dict(
+        color=['green' if e else 'red' for e in sign],
+        line=dict(
+            color='black',
+            width=1,
+        )
+    )
+    )
+
+    data = [trace_base, trace_top]
+    pos = [model_pred*1.05 if s else model_pred*0.95 for a,s in zip(base, sign)]
+    layout = go.Layout(
+        barmode='stack',
+        paper_bgcolor='rgba(245, 246, 249, 1)',
+        plot_bgcolor='rgba(245, 246, 249, 1)',
+        showlegend=False,
+        xaxis={
+            'title':'features',
+            # 'range':(0,1),
+            'showline':False,
+            'zeroline':False,
+                        # 'ticks':'',
+            'showticklabels':False,
+        },
+        shapes = [
+            {'type':'line','x0':feature[0],'y0':0.29,'x1':feature[-1],'y1':0.29,'line':{'color':'orange','width':2}},
+            {'type':'line','x0':feature[0],'y0':model_pred,'x1':feature[-1],'y1':model_pred,'line':{'color':'blue','width':2,'dash':'dashdot'}}
+
+        ],
+        yaxis={
+            'title':'score',
+            'range':(min(base), max(top)+max(base)),  # sorta di autorange decente
+
+            # 'showline':False,
+            # 'ticks':'',
+            'zeroline':False,
+
+        },
+        title='Valori Shapley per il sinistro {} estratto il {}/{}/2018'.format(idsx, gg, mm)
+        # margin=go.Margin(
+        # l=300,
+        # r=50,
+        # b=100,
+        # t=100,
+        # pad=10
+        #     ),
+        # annotations=[{'x':x if sgn else 0.28,'y':y,'text':txt,'xref':'x','yref':'y', 'showarrow':False,} for x,y,txt,sgn in zip(pos, feature, feature, sign)]
+        
+    )
+    fig = go.Figure(data=data, layout=layout)
+
+    if filename:
+        poff.plot(fig, filename=filename)
+    else:
+        return fig
+
+def plot_shap_data(shap, data, basevalue, row, k=None, filepath=None):
+    col_expected_value = shap['expected_value'].unique().tolist()[0]
+    shap = shap[[c for c in shap.columns if c != 'expected_value']].copy()
+
+    header = list(data.columns)
+    
+    shaprow = shap.iloc[row,:]
+    datarow = data.iloc[row,:]
+    
+    print(shaprow.shape, datarow.shape)
+
+    dfshap = pd.DataFrame({'shap_values':shaprow, 'values':datarow.tolist(), 'features':list(data.columns), 'expected_value':col_expected_value})
+    
+    
+    if k is not None:
+        dfshap = dfshap.iloc[np.abs(dfshap.shap_values).sort_values().head(k).index].copy()
+
+    print(dfshap)
+
+def get_shap_data(shap, data, row, k=None, filepath=None, fromzero=True):
+    '''
+    Funzione che plotta i valori shap di una riga di un dataset.
+
+    Arguments:
+        shap, DataFrame: dataframe degli shap values, riga x colonna
+        data, DataFrame: dataframe dei valori
+        row, int: numero osservazione da spiegare
+        k, int: numero di feature da mostrare (selezionate in ordine di valore assoluto)
+        usefirstk, bool: se selezionare le prime k feature per valore assoluto
+    '''
+
+    col_expected_value = shap['expected_value']
+    shap = shap[[c for c in shap.columns if c != 'expected_value']].copy()
+
+    header = list(data.columns)
+    
+    shaprow = shap.iloc[row,:]
+    datarow = data.iloc[row,:]
+    
+    dfshap = pd.DataFrame({'shap_values':shaprow, 'values':datarow.tolist(), 'features':list(data.columns)})
+    
+    
+    if k is not None:
+        dfshap = dfshap.iloc[np.abs(dfshap.shap_values).sort_values().head(k).index].copy()
+    
+    
+    
+    dfshap.sort_values('shap_values', inplace=True)
+    trace = go.Bar(
+        y = dfshap.features,
+        x = dfshap.shap_values,
+        text = ['{}={}'.format(feat, val) for feat, val in zip(dfshap.features, dfshap['values'])],
+        hoverinfo='text',
+        orientation = 'h'
+    )
+    
+    maxrange = np.abs(dfshap.shap_values).max()
+    
+    layout = go.Layout(
+        xaxis={'range':(-maxrange,maxrange)}
+    )
+    
+    fig = go.Figure(data=[trace], layout=layout)
+    
+    if filepath is None:
+        return fig
+    else:
+        poff.plot(fig, filename=filepath)

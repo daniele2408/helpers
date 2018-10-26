@@ -1,4 +1,6 @@
 import h2o
+import helpers.viz.graph_func as gf
+import json
 import os
 import pandas as pd
 import pickle
@@ -118,6 +120,197 @@ def split_h2o_and_factor(df, target, myseed, column_types, ratio_train, ratio_sc
         res = df_h2o.split_frame(ratios=[ratio_train], seed = myseed)
 
     return res # df_h2o.split_frame(ratios=[ratio_train, ratio_scale], seed = myseed) if ratio_scale > 0 else df_h2o.split_frame(ratios=[ratio_train], seed = myseed)
+
+def train_model_GBM_simplify(
+    dfPath,
+    predittori, 
+    target,
+    column_types,
+    model_id,
+    rootDir,
+    trial=False,
+    ratio_train=.7,
+    ratio_scale=.15,
+    nthreads=3,
+    myseed=12345,
+    shutfirst=False,
+    verbose=False,
+    startserver=True,
+    keepserver=True,
+    **iperparam):
+    '''
+    Funzione che prende un path di un .csv contenente un dataset preprocessato e altre informazioni per poter applicare un GBM h2o.
+
+    :param dfPath: stringa col path del dataset
+    :param predittori: lista delle x_vars
+    :param target: stringa variabile target
+    :param column_types: dizionario col tipo di ogni predittore
+    :param model_id: stringa nome del modello, serve anche per creare la cartella
+    :param rootDir: path cartella root
+    :param trial: booleano per non dover usare tutto il dataset ma solo 10k righe
+    :param ratio_train: float, % per il train set
+    :param ratio_scale: float, % per il validation set
+    :param nthreads: intero, numero thread per server h2o
+    :param port: intero, porta per server h2o
+    :param myseed: intero, random seed per lo split
+    :param shutfirst:
+    :param verbose:
+    :param startserver:
+    :param startserver:
+    :param keepserver:
+    :param **iperparam: parametri per l'istanza di H2OGradientBoostingEstimator
+    
+    :return gbm: modello gbm
+    :return testfull: test set + predict test, in formato DataFrame
+    :return trainfull: train set + predict train, in formato DataFrame
+    :return perfs: oggetto per richiamare i metodi per le perfomrance (logloss, auc, ecc...)
+    '''
+
+    if trial:
+        df = pd.read_csv(dfPath, nrows=10000)
+    else:
+        df = pd.read_csv(dfPath)
+
+    model_id = model_id + '_' + datetime.strftime(datetime.now(), format="%Y%m%d%H%M")  # il model_id avrà il timestamp incorporato
+
+    pathModel = os.path.join(rootDir, 'modello_{}'.format(model_id))
+    pathPredsData = os.path.join(pathModel, 'predittori.p')
+    pathColtypesData = os.path.join(pathModel, 'coltypes.p')
+
+    pathData = os.path.join(pathModel, 'data', 'dataset.csv')
+    pathDataTrain = os.path.join(pathModel, 'data', 'train')
+    pathDataTest = os.path.join(pathModel, 'data', 'test')
+
+    os.makedirs(pathDataTest, exist_ok=True)
+    os.makedirs(pathDataTrain, exist_ok=True)
+
+    # mi accerto che ci sia almeno un 15% del dataset per il test
+    ratio_test = 1 - (ratio_scale + ratio_train)
+    assert ratio_test >= .15, "Percentuale dataset per test troppo bassa ({:.2f})".format(ratio_test)
+
+    # creo il dizionario da dare come risultato
+
+    diz_res = {
+        'DATA':{'pathData':pathData, 'seed':myseed, 'perc_train/perc_cal/perc_test':(ratio_train, ratio_scale, ratio_test)},
+        'MODEL':{'pathModel':pathModel, 'time_elapsed':'', 'predittori':pathPredsData, 'col_types':pathColtypesData},
+        'RESULTS':{'train':{'auc':'', 'logloss':''}, 'test':{'auc':'', 'logloss':''}, 'truth':'', 'score':'', 'probname':''}
+    }
+
+    try:
+        # inizializzo il server
+        if shutfirst:
+            h2o.cluster().shutdown()
+
+        if startserver:
+            os.environ['http_proxy'] = ''
+            os.environ['https_proxy'] = ''
+            h2o.init(nthreads=nthreads, max_mem_size = '28G')
+
+        ######################### DATA #########################
+
+        # creo train test e scaling con una funzione per poterla richiamare anche poi
+        if verbose:
+            print('Faccio lo split del dataset')
+        if ratio_scale > 0:
+            train, test, scaling = split_h2o_and_factor(df, target, myseed, column_types, ratio_train, ratio_scale)
+        else:
+            train, test = split_h2o_and_factor(df, target, myseed, column_types, ratio_train)
+
+        ######################### MODEL #########################
+
+        # creo modello e lo traino
+        iperparam['model_id'] = model_id
+        if ratio_scale > 0:
+            iperparam['calibrate_model'] = True
+            iperparam['calibration_frame'] = scaling
+
+        if verbose:
+            print('Lancio il modello')
+
+        t0 = datetime.now()
+        gbm = H2OGradientBoostingEstimator(**iperparam)
+        gbm.train(x=predittori, y=target, training_frame=train)
+        t1 = datetime.now()
+        time_elapsed = (t1-t0).seconds / 60
+        print('Il modello ci ha impiegato {:.1f} minuti'.format(time_elapsed))
+
+        diz_res['MODEL']['time_elapsed'] == time_elapsed
+
+        ######################### RESULTS #########################
+
+        if verbose:
+            print('Calcolo le performance')
+        # tengo da parte le performance per darle al return
+        perfs_train = gbm.model_performance()
+        perfs_test = gbm.model_performance(test)
+
+        if verbose:
+            print('Salvo il modello e i predittori')
+        # salvo il modello
+        h2o.save_model(gbm, path=pathModel, force=True)
+
+        # salvo predittori e coltypes
+        pickle.dump(predittori, open(pathPredsData, 'wb'))
+        pickle.dump(column_types, open(pathColtypesData, 'wb'))
+
+        if verbose:
+            print('Aggiungo le predizioni ai set')
+        # unisco test e predizioni con probabilità
+        predsH2O = gbm.predict(test)
+
+        df_preds = predsH2O.as_data_frame()
+        assert df_preds.predict.value_counts().shape[0] == 2, 'Il predict in preds ha più di due valori'
+        df_test = test.as_data_frame()
+        assert df_test[target].value_counts().shape[0] == 2, 'Il target in test ha più di due valori'
+
+        assert df_test.shape[0] == df_preds.shape[0], 'Test e Preds hanno diverso numero di righe'
+        testfull = pd.concat([df_test, df_preds.iloc[:,-1]], axis=1)
+
+        diz_res['RESULTS']['test']['auc'] = perfs_test.auc()
+        diz_res['RESULTS']['test']['logloss'] = perfs_test.logloss()
+        diz_res['RESULTS']['train']['auc'] = perfs_train.auc()
+        diz_res['RESULTS']['train']['logloss'] = perfs_train.logloss()
+        diz_res['RESULTS']['probname'] = list(df_preds.columns)[-1]
+
+        diz_res['RESULTS']['truth'] = testfull[target]
+        diz_res['RESULTS']['score'] = df_preds[diz_res['RESULTS']['probname']]
+
+        gf.roc_curve_annotated(
+            diz_res['RESULTS']['truth'],
+            diz_res['RESULTS']['score'],
+            target, diz_res['RESULTS']['probname'],
+            ['accuracy', 'recall', 'precision', 'miss_error_0', 'miss_error_1', 'precision_0'],
+            rootDir,
+            'roc_curve_{}.html'.format(model_id))
+
+        gf.lift_chart(
+            testfull[target, diz_res['RESULTS']['probname']],
+            target,
+            diz_res['RESULTS']['probname'],
+            rootDir,
+            'lift_chart_{}.html'.format(model_id)
+        )
+
+        gf.grafico_metriche(
+            testfull[target, diz_res['RESULTS']['probname']],
+            target,
+            diz_res['RESULTS']['probname'],
+            rootDir,
+            'grafico_metriche_{}.html'.format(model_id)
+        )
+
+    except Exception as err:
+        print(err)
+        raise err
+    finally:
+        if not keepserver:
+            h2o.remove_all()
+            h2o.cluster().shutdown()
+
+    with open(os.path.join(rootDir, 'diz_res_{}.json'.format(model_id),'wb')) as f:
+        json.dump(diz_res, f, indent=4)
+
+    return diz_res
 
 
 def train_model_GBM(
