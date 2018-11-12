@@ -292,9 +292,10 @@ def list_to_query(ls):
     return '(\'' + '\', \''.join([e for e in ls]) + '\')'
 
 
-def depack_dataset(df, subset=None):
+def depack_dataset(df, subset=None, checkvalue=True):
     '''
     Funzione che restituisce un dizionario con le colonne divise per tipologia (cont cat) e i valori unici se è cat e il range se è cont
+    checkvalue serve per controllare se esistono già -999, se invece sono stati già inseriti al posto dei nan basta disattivarlo
     '''
 
     if subset is None:
@@ -306,7 +307,8 @@ def depack_dataset(df, subset=None):
         # sostituisco i nan con -999, devo sapere però che tipo è prima
         tipo = aux[c].dtype
         if tipo == 'object':
-            assert '-999' not in set(aux[c].unique()), 'Non possiamo usare -999 come replace NaN, già presente'
+            if checkvalue:
+                assert '-999' not in set(aux[c].unique()), 'Non possiamo usare -999 come replace NaN, già presente'
             aux[c].replace(np.NaN, '-999', inplace=True)
             diz_tipo['cat'][c] = list(aux[aux[c]!='-999'][c].unique())
 
