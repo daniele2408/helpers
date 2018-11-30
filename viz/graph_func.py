@@ -97,7 +97,7 @@ def compute_scores(df, soglia, nometrue, nomeprob, verbose=False):
     # print(scores, TP, TN, FP, FN)
     return scores
 
-def roc_curve_annotated(df, nometrue, nomeprob, ls_score, rootDir, filename, grafmetr_ls=None, save=True):
+def roc_curve_annotated(df, nometrue, nomeprob, ls_score, rootDir, filename, grafmetr_ls=None, save=True, sample=False, ndivsample=1000):
     '''Funzione che realizza uan roc curve in .html per i risultati di un modello
 
     Arguments:
@@ -133,6 +133,10 @@ def roc_curve_annotated(df, nometrue, nomeprob, ls_score, rootDir, filename, gra
     tpr.append(1)
     thr.insert(0,1)
     thr.append(0)
+
+    if sample:
+        step = round(len(thr)/ndivsample)
+        thr = [e for i,e in enumerate(thr) if i % step == 0]
 
     auc = roc_auc_score(ytrue, yprob)
 
@@ -328,7 +332,7 @@ def lift_chart(df, nometrue, nomeprob, rootDir, filename, save=True):
     return fig
 
 
-def grafico_metriche(df, truename, probname, rootDir, filename, ls_score=None, save=True):
+def grafico_metriche(df, truename, probname, rootDir, filename, ls_score=None, save=True, sample=False):
     _, _, thr = roc_curve(df[truename], df[probname])
 
     thr = [e for e in thr if 0<=e<=1]
@@ -340,7 +344,11 @@ def grafico_metriche(df, truename, probname, rootDir, filename, ls_score=None, s
         ls_score = ls_score_tot
     ls_index = [ls_score_tot.index(m) for m in ls_score]
     ls = list()
-    for soglia in thr:
+
+    if sample:
+        step = round(len(thr) / 1000)
+        thr = [e for i,e in enumerate(thr) if i % step == 0]
+    for soglia in tqdm(thr):
         res = compute_scores(df, soglia, truename, probname)
         ls.append([n for i,n in enumerate(res) if i in ls_index])
 

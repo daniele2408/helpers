@@ -2,7 +2,14 @@ import pandas as pd
 import numpy as np
 import re
 import os
-from itertools import combinations
+
+from itertools import combinations, zip_longest
+from math import radians, cos, sin, asin, sqrt
+
+def grouper(iterable, n, fillvalue=None):
+    args = [iter(iterable)] * n
+    return zip_longest(*args, fillvalue=fillvalue)
+
 
 def delete_outlier(df, cols, q=.99, verbose=False):
     
@@ -306,6 +313,7 @@ def depack_dataset(df, subset=None, checkvalue=True):
     for c in subset:
         # sostituisco i nan con -999, devo sapere però che tipo è prima
         tipo = aux[c].dtype
+        print(c, tipo)
         if tipo == 'object':
             if checkvalue:
                 assert '-999' not in set(aux[c].unique()), 'Non possiamo usare -999 come replace NaN, già presente'
@@ -313,8 +321,73 @@ def depack_dataset(df, subset=None, checkvalue=True):
             diz_tipo['cat'][c] = list(aux[aux[c]!='-999'][c].unique())
 
         else:
-            assert aux[aux[c]==-999].shape[0] == 0, 'Non possiamo usare -999 come replace NaN, già presente'
-            aux[c].replace(np.NaN, -999, inplace=True)
-            diz_tipo['cont'][c] = (str(aux[aux[c]!=-999][c].min()), str(aux[aux[c]!=-999][c].max()))
+            # assert aux[aux[c]==-999].shape[0] == 0, 'Non possiamo usare -999 come replace NaN, già presente'
+            # aux[c].replace(np.NaN, -999, inplace=True)
+            colz = aux[c].dropna().copy()
+
+            try:
+                diz_tipo['cont'][c] = (str(colz[colz!=-999].min()), str(colz[colz!=-999].max()))
+            except Exception as err:
+                print(err)
+                print(colz.describe())
+                print(colz.isnull().sum())
 
     return diz_tipo
+
+def check_align_depack(dp1, dp2):
+    '''
+    funzione che paragona due depack (solo categoriche) e printa le differenze, non devono mancare in dp1 cose che sono in dp2
+
+    Parameters:
+        dp1: depack dataset originale
+        dp2: depack dataset collaudo
+    '''
+    # s1 = set(dp1['cat'].keys())
+    s2 = set(dp2['cat'].keys())
+    # assert len(s1.difference(s2)) == 0 and len(s2.difference(s1)), 'I depack hanno variabili categoriche diverse'
+
+    for c in s2:
+        varz1 = set(dp1['cat'][c])
+        varz2 = set(dp2['cat'][c])
+        diffs = varz2.difference(varz1)
+
+        if len(diffs) > 0:
+            print('\n\nI seguenti valori della variabile {} mancano dal dataset originale'.format(c))
+            print(diffs)
+            print('\nDati originali')
+            print(varz1)
+
+
+
+def haversine(lon1, lat1, lon2, lat2):
+    """
+    Calculate the great circle distance between two points 
+    on the earth (specified in decimal degrees)
+    """
+    # convert decimal degrees to radians 
+    xlon1, xlat1, xlon2, xlat2 = map(radians, [lon1, lat1, lon2, lat2])
+
+    # haversine formula 
+    dlon = xlon2 - xlon1 
+    dlat = xlat2 - xlat1 
+    a = sin(dlat/2)**2 + cos(xlat1) * cos(xlat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a)) 
+    r = 6371 # Radius of earth in kilometers. Use 3956 for miles
+    return c * r
+
+
+def apb_vicina(x, lista_apb, namelong='lng', namelat='lat'):
+    return min([haversine(x[namelong], x[namelat], e[0], e[1]) for e in lista_apb])
+
+
+# def apb_vicina_inversa(x, lista_apb):
+#     return min([haversine(x.lat, x.lng, e[0], e[1]) for e in lista_apb])
+
+
+# def add_dist_apb(df_addr, lista_apb, address_key='indirizzo_completo'):
+
+#     aux = pd.merge(aux, df_addr, left_on=address_key,right_on='address', how='left')
+
+#     aux['dist_apb'] = aux.apply(lambda x: apb_vicina(x, lista_apb) if x.lat>x.lng else apb_vicina_inversa(x, lista_apb), axis=1)
+
+#     return aux
