@@ -255,7 +255,7 @@ def iterate_over_list(db, ls_valori, chunksize=None, table=None, select=None, fi
 
             c += chunksize
             if verbose:
-                print("Ne abbiamo lavorati {} su {}".format(c, lenls))
+                print("Ne abbiamo lavorati {} su {}".format(min(c, lenls), lenls))
 
     res = pd.concat(ls_df, axis=0)
 

@@ -47,7 +47,7 @@ def grid_learn(alg, X_train, y_train, n_est, n_jobs):
 
     gsearch.fit(X_train, y_train)
 
-    return sorted(gsearch.grid_scores_, key=lambda x: x[1]), gsearch.best_params_, gsearch.best_score_
+    return sorted(gsearch.cv_results_, key=lambda x: x[1]), gsearch.best_params_, gsearch.best_score_
 
 def get_n_est(alg, dtrain, predictors, target, cv_folds=5, early_stopping_rounds=50):
         xgb_param = alg.get_xgb_params()
@@ -58,13 +58,19 @@ def get_n_est(alg, dtrain, predictors, target, cv_folds=5, early_stopping_rounds
 
         return n_estimators, cvresult
 
-def modelfit(alg, dtrain, n_est, predictors, target, useTrainCV=True, cv_folds=5, early_stopping_rounds=50):
+def modelfit(alg, dtrain, n_est, predictors, target, useTrainCV=True, foldObj=None, cv_folds=5, early_stopping_rounds=50):
     
     if useTrainCV:
         xgb_param = alg.get_xgb_params()
         xgtrain = xgb.DMatrix(dtrain[predictors].values, label=dtrain[target].values)
-        cvresult = xgb.cv(xgb_param, xgtrain, num_boost_round=alg.get_params()['n_estimators'], nfold=cv_folds,
-            metrics=['auc', 'logloss'], early_stopping_rounds=early_stopping_rounds, verbose_eval=False)
+        cvresult = xgb.cv(
+                xgb_param, xgtrain, 
+                num_boost_round=alg.get_params()['n_estimators'],
+                nfold=cv_folds,
+                folds=foldObj,
+                metrics=['auc', 'logloss'],
+                early_stopping_rounds=early_stopping_rounds,
+                verbose_eval=False)
         alg.set_params(n_estimators=cvresult.shape[0])
     else:
         alg.set_params(n_estimators=n_est)

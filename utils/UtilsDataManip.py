@@ -93,6 +93,20 @@ def check_mixed(test, out=False):
         return col_mix
 
 def are_uniques(df, subset):
+    '''
+    Predicato che controlla che una o più colonne di un DataFrame siano uniche
+
+    Args:
+        - df, (DataFrame): DataFrame da controllare
+        - subset, (list|str): lista di colonne oppure stringa unica
+
+    Returns:
+        - bool: booleano
+    '''
+
+    if isinstance(subset, str):
+        subset = [subset]
+
     mix = check_mixed(df[subset],out=True)
     if len(mix) > 0:
         cols = [e for e in mix]
@@ -313,7 +327,6 @@ def depack_dataset(df, subset=None, checkvalue=True):
     for c in subset:
         # sostituisco i nan con -999, devo sapere però che tipo è prima
         tipo = aux[c].dtype
-        print(c, tipo)
         if tipo == 'object':
             if checkvalue:
                 assert '-999' not in set(aux[c].unique()), 'Non possiamo usare -999 come replace NaN, già presente'
@@ -342,6 +355,7 @@ def check_align_depack(dp1, dp2):
         dp1: depack dataset originale
         dp2: depack dataset collaudo
     '''
+    print('---- confronto depack avviato ----')
     # s1 = set(dp1['cat'].keys())
     s2 = set(dp2['cat'].keys())
     # assert len(s1.difference(s2)) == 0 and len(s2.difference(s1)), 'I depack hanno variabili categoriche diverse'
@@ -356,6 +370,45 @@ def check_align_depack(dp1, dp2):
             print(diffs)
             print('\nDati originali')
             print(varz1)
+
+    print('---- confronto depack terminato ----')
+
+def quick_depack(df, categorical):
+    return {c:set(df[c].unique().tolist()) for c in categorical}
+
+def check_modalita(df1, c1, df2, c2=None, verbose=False):
+    '''
+    Funzione per comparare le modalità delle colonne in comune di due DataFrame
+    '''
+
+    if c2 is None:
+        c2 = c1
+
+    commoncolz = set(c1).intersection(set(c2))
+
+    diz = {'depack1':{}, 'depack2':{}}
+
+    for idx, e in enumerate([df1, df2]):
+        if isinstance(e, pd.DataFrame):
+            diz['depack{}'.format(idx+1)] = quick_depack(e, commoncolz)
+
+    # if verbose:
+    #     print('''
+    #     I dataframe hanno {} colonne in comune,
+    #     {} diverse, di cui {} esclusive della prima e {}
+    #     esclusive della seconda
+    #     '''.format(lcomm, l1+l2, l1, l2))
+        else:
+            diz['depack{}'.format(idx+1)] = e
+    
+
+
+    for col in commoncolz:
+        print(col)
+
+        mancanti = diz['depack2'][col].difference(diz['depack1'][col])
+
+        print("\nPer la colonna {} mancano nel trainset {} valori su {} del set di collaudo:\n{}".format(col, len(mancanti), len(diz['depack2'][col]), '\n'.join([str(e) for e in mancanti])))
 
 
 

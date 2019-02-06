@@ -9,8 +9,6 @@ from tqdm import tqdm
 
 
 def get_predict(temp, soglia, nomeprob):
-    temp
-
     temp['predict'] = temp[nomeprob].apply(lambda x: 1 if x>=soglia else 0)
     
     return temp
@@ -45,6 +43,70 @@ def conf_matr_doc(df, metriche, ls_score, ls, rootDir, filename, nometrue, nomep
             cm.rename_axis('predict', inplace=True, axis='columns')
             # print(cm)
             # print(pd.concat([cm, pd.Series([cm.iloc[0,1] / cm.iloc[0,:].sum(), cm.iloc[1,0] / cm.iloc[1,:].sum()], name='error_rate')], axis=1), file=f)
+
+
+def plot_score_hist(df, colname, nbins=100, save=False, savePath=None, verbose=True):
+    '''
+    Funzione per generare un istogramma degli score di un predict, ritorna una go.Figure
+
+    '''
+
+    trace = go.Histogram(
+        x = df[colname],
+        nbinsx = nbins
+    )
+
+    fig = go.Figure(data=[trace])
+
+    if save:
+        poff.plot(fig, auto_open=False, filename=savePath)
+        if verbose:
+            print("Istogramma salvato in {}".format(os.path.join(os.getcwd(), savePath)))
+
+    return fig
+
+def target_score_sorted(df, truename, scorename, nbins=100, save=False, savePath=None, normalize=False):
+    '''
+    Funzione che genera i due istogrammi sovrapposti del target, ordinato per lo score
+
+    Args:
+        - df, (DataFrame): dataset
+        - truename, (str): nome colonna target
+        - scorename, (str): nome colonna score
+        - nbins, (int): numero bins
+        - save, (bool): se salvare la fig
+        - savePath, (str): path per salvare la fig
+        - normalize (bool): se normalizzare le distr
+
+    Returns:
+        - fig, (go.Figure): oggetto Figure
+    '''
+
+    trace0 = go.Histogram(
+        x = df[df[truename]==0][scorename],
+        opacity=0.55,
+        nbinsx = nbins,
+        histnorm='probability' if normalize else None
+
+    )
+
+    trace1 = go.Histogram(
+        x = df[df[truename]==1][scorename],
+        opacity=0.55,
+        nbinsx = nbins,
+        histnorm='probability' if normalize else None
+
+    )
+
+    data = [trace0, trace1]
+    layout = go.Layout(barmode='overlay')
+    fig = go.Figure(data=data, layout=layout)
+
+    if save:
+        poff.plot(fig, auto_open=False, filename=savePath)
+    
+    return fig
+    
 
 
 def annotations_roc(ls_ls, ls_score, ls_soglie, fpr, tpr, thr):
@@ -95,7 +157,8 @@ def compute_scores(df, soglia, nometrue, nomeprob, verbose=False):
     scores = [accuracy, recall, precision, fpr, f1score, f2score, f05score, miss_error_0, miss_error_1, precision_0]
     scores = [e if e!=np.NaN else 0 for e in scores]
     # print(scores, TP, TN, FP, FN)
-    return scores
+    scores.extend([TP, TN, FP, FN])
+    return scores, None
 
 def roc_curve_annotated(df, nometrue, nomeprob, ls_score, rootDir, filename, grafmetr_ls=None, save=True, sample=False, ndivsample=1000):
     '''Funzione che realizza uan roc curve in .html per i risultati di un modello
@@ -145,7 +208,8 @@ def roc_curve_annotated(df, nometrue, nomeprob, ls_score, rootDir, filename, gra
     lista_tuple_soglia = list()
     for soglia in tqdm(thr):
         if 0 <= soglia <= 1:
-            lista_tuple_soglia.append((soglia,compute_scores(df_full, soglia, nometrue, nomeprob)))
+            scores, scores_abs = compute_scores(df_full, soglia, nometrue, nomeprob)
+            lista_tuple_soglia.append((soglia,scores))
     
     roc = go.Scatter(
         x = fpr,
@@ -332,42 +396,61 @@ def lift_chart(df, nometrue, nomeprob, rootDir, filename, save=True):
     return fig
 
 
-def grafico_metriche(df, truename, probname, rootDir, filename, ls_score=None, save=True, sample=False):
+def grafico_metriche(df, truename, probname, rootDir, filename, ls_score=None, save=True, sample=False, ndivsample=1000):
     _, _, thr = roc_curve(df[truename], df[probname])
+
+    abs_values = {'TP', 'TN', 'FP', 'FN'}
 
     thr = [e for e in thr if 0<=e<=1]
     thr.insert(0,1)
     thr.append(0)
 
-    ls_score_tot = ['accuracy', 'recall', 'precision', 'fpr', 'f1score', 'f2score', 'f05score', 'miss_error_0', 'miss_error_1', 'precision_0']
+    ls_score_tot = ['accuracy', 'recall', 'precision', 'fpr', 'f1score', 'f2score', 'f05score', 'miss_error_0', 'miss_error_1', 'precision_0', 'TP', 'TN', 'FP', 'FN']
     if ls_score is None:
         ls_score = ls_score_tot
     ls_index = [ls_score_tot.index(m) for m in ls_score]
     ls = list()
 
     if sample:
-        step = round(len(thr) / 1000)
+        step = round(len(thr) / ndivsample)
         thr = [e for i,e in enumerate(thr) if i % step == 0]
     for soglia in tqdm(thr):
-        res = compute_scores(df, soglia, truename, probname)
+        res, scores_abs = compute_scores(df, soglia, truename, probname, verbose=False)
         ls.append([n for i,n in enumerate(res) if i in ls_index])
 
     df_metriche = pd.DataFrame(ls, columns=ls_score)
 
     data = list()
     for metrica in ls_score:
-        trace = go.Scatter(
-            x = thr,
-            y = df_metriche[metrica],
-            name = metrica
-        )
-        data.append(trace)
+        if metrica not in abs_values:
+            trace = go.Scatter(
+                x = thr,
+                y = df_metriche[metrica],
+                name = metrica
+            )
+            data.append(trace)
+        else:
+            trace = go.Scatter(
+                x = thr,
+                y = df_metriche[metrica],
+                yaxis='y2',
+                name = metrica
+            )
+            data.append(trace)
 
     layout = go.Layout(
         title='Metriche della confusione matrix',
         xaxis={'title':'valori soglia'},
-        yaxis={'title':'valori metriche'}
+        yaxis={'title':'valori metriche'},
     )
+
+    if len(abs_values.intersection(ls_score))>0:
+        layout['yaxis2'] = {
+            'title':'valori assoluti metriche',
+            'overlaying':'y',
+            'side':'right',
+            'showgrid':False,
+            }
 
     fig = go.Figure(data=data, layout=layout)
 
