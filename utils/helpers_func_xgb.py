@@ -73,7 +73,7 @@ def modelfit(alg, dtrain, n_est, predictors, target, useTrainCV=True, foldObj=No
                 verbose_eval=False)
         alg.set_params(n_estimators=cvresult.shape[0])
     else:
-        alg.set_params(n_estimators=n_est)
+        alg.set_params(n_estimators=n_est, early_stopping_rounds=early_stopping_rounds)
  
     #Fit the algorithm on the data
     alg.fit(dtrain[predictors], dtrain[target],eval_metric='auc')
