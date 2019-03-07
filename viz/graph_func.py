@@ -244,7 +244,7 @@ def roc_curve_annotated(df, nometrue, nomeprob, ls_score, rootDir, filename, gra
         xaxis = {'dtick':0.1,'title':'false positive rate'},
         yaxis = {'dtick':0.1,'title':'true positive rate'},
         
-        title = 'ROC Curve APB score',
+        title = 'ROC Curve',
         shapes = [
             {'type': 'line',
             'x0': 0,

@@ -58,7 +58,7 @@ def get_n_est(alg, dtrain, predictors, target, cv_folds=5, early_stopping_rounds
 
         return n_estimators, cvresult
 
-def modelfit(alg, dtrain, n_est, predictors, target, useTrainCV=True, foldObj=None, cv_folds=5, early_stopping_rounds=50):
+def modelfit(alg, dtrain, dtest, n_est, predictors, target, useTrainCV=True, foldObj=None, cv_folds=5, early_stopping_rounds=50):
     
     if useTrainCV:
         xgb_param = alg.get_xgb_params()
@@ -73,10 +73,15 @@ def modelfit(alg, dtrain, n_est, predictors, target, useTrainCV=True, foldObj=No
                 verbose_eval=False)
         alg.set_params(n_estimators=cvresult.shape[0])
     else:
-        alg.set_params(n_estimators=n_est, early_stopping_rounds=early_stopping_rounds)
+        alg.set_params(n_estimators=n_est)
  
     #Fit the algorithm on the data
-    alg.fit(dtrain[predictors], dtrain[target],eval_metric='auc')
+    print(early_stopping_rounds)
+    alg.fit(
+        dtrain[predictors], dtrain[target], 
+        eval_set=[(dtrain[predictors], dtrain[target]), (dtest[predictors], dtest[target])],
+        eval_metric='auc',
+        early_stopping_rounds=early_stopping_rounds)
         
     #Predict training set:
 #     dtrain_predictions = alg.predict(dtrain[predictors])

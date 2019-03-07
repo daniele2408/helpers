@@ -6,6 +6,10 @@ import os
 from itertools import combinations, zip_longest
 from math import radians, cos, sin, asin, sqrt
 
+def yield_chunk_list(ls, chunksize):
+    for i in range(0,len(ls),chunksize):
+        yield ls[i:min(i+chunksize, len(ls))]
+
 def grouper(iterable, n, fillvalue=None):
     args = [iter(iterable)] * n
     return zip_longest(*args, fillvalue=fillvalue)
@@ -310,9 +314,14 @@ def list_to_query(ls):
     '''
     prende una lista e la inserisce tra gli apici per formare una query (WHERE IN ...)
     '''
-    return '(\'' + '\', \''.join([e for e in ls]) + '\')'
+    tipo = type(None)
+    return '(\'' + '\', \''.join([e.replace("'","") for e in ls if not isinstance(e, tipo)]) + '\')'
 
-
+def add_list_to_qry(qry, ls):
+    assert '{}' in qry, 'Non abbiamo graffe per accogliere la lista stringata'
+    print('add_list_to_qry - Lanciamo una query con una lista con numerosità {}'.format(len(ls)))
+    return qry.format(list_to_query(ls))
+    
 def depack_dataset(df, subset=None, checkvalue=True):
     '''
     Funzione che restituisce un dizionario con le colonne divise per tipologia (cont cat) e i valori unici se è cat e il range se è cont
@@ -432,6 +441,57 @@ def haversine(lon1, lat1, lon2, lat2):
 def apb_vicina(x, lista_apb, namelong='lng', namelat='lat'):
     return min([haversine(x[namelong], x[namelat], e[0], e[1]) for e in lista_apb])
 
+
+def merge_educato(left, right, on=None, left_on=None, right_on=None, how='inner'):
+    if on is None:
+        assert ((left_on is not None) and (right_on is not None)), 'Definire left_on e right_on'
+    if on:
+        print('#######################')
+        print(check_join(left, on, right, on))
+        print('La dimensione del left dataset è: {}'.format(left.shape))
+        print('La dimensione del right dataset è: {}'.format(right.shape))
+        res = pd.merge(left, right, how=how, on=on)
+        print('La dimensione del dataset risultante è {}'.format(res.shape))
+        print('#######################')
+        return res
+    else:
+        print('#######################')
+        print(check_join(left, left_on, right, right_on))
+        print('La dimensione del left dataset è: {}'.format(left.shape))
+        print('La dimensione del right dataset è: {}'.format(right.shape))
+        res = pd.merge(left, right, how=how, left_on=left_on, right_on=right_on)
+        print('La dimensione del dataset risultante è {}'.format(res.shape))
+        print('#######################')
+        return res
+
+import functools
+
+def debug(func):
+    """Print the function signature and return value"""
+    @functools.wraps(func)
+    def wrapper_debug(*args, **kwargs):
+        args_repr = [repr(a) for a in args]                      # 1
+        kwargs_repr = [f"{k}={v!r}" for k, v in kwargs.items()]  # 2
+        signature = ", ".join(args_repr + kwargs_repr)           # 3
+        print(f"-->Calling {func.__name__}({signature})")
+        value = func(*args, **kwargs)
+        print(f"-->{func.__name__!r} returned {value!r}")           # 4
+        return value
+    return wrapper_debug
+
+import time
+
+def timer(func):
+    """Print the runtime of the decorated function"""
+    @functools.wraps(func)
+    def wrapper_timer(*args, **kwargs):
+        start_time = time.perf_counter()    # 1
+        value = func(*args, **kwargs)
+        end_time = time.perf_counter()      # 2
+        run_time = end_time - start_time    # 3
+        print(f"-->Finished {func.__name__!r} in {run_time:.4f} secs")
+        return value
+    return wrapper_timer
 
 # def apb_vicina_inversa(x, lista_apb):
 #     return min([haversine(x.lat, x.lng, e[0], e[1]) for e in lista_apb])
