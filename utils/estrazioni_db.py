@@ -262,7 +262,7 @@ def iterate_over_list(db, ls_valori, chunksize=None, table=None, select=None, fi
     return res
 
 if __name__ == '__main__':
-    df = pd.read_csv(r'C:\Users\LEI00020\Desktop\pipelineAPB\unico\datasets\datisx2018_new.csv', nrows=10000, encoding='latin1')
+    df = pd.read_csv('', nrows=10000, encoding='latin1')
     crifsel = [
         "crif_score_affidabilita_seg1",
         "crif_score_affidabilita_seg2",
@@ -283,7 +283,7 @@ if __name__ == '__main__':
         'PROVINCIA':'ANT_SPTPROV',
         'CITTA':'ANT_SPTCOMUN'
     }
-    with create_engine('postgresql://postgres:postgres@172.25.172.170:5433/Geocoder') as conn:
+    with create_engine('') as conn:
         res = query_crif(df, truesel, conn, feat_indirizzo = diz_feat_ind)
 
     print(res)
